@@ -33,6 +33,20 @@ type AppWrapperSpec struct {
 
 	// ManagedBy is used to indicate the controller or entity that manages the AppWrapper.
 	ManagedBy *string `json:"managedBy,omitempty"`
+
+	// CompletionPolicy defines an optional policy for determining AppWrapper completion
+	// based on a single trigger component rather than requiring all pods to succeed.
+	//+optional
+	CompletionPolicy *CompletionPolicy `json:"completionPolicy,omitempty"`
+}
+
+// CompletionPolicy configures how the AppWrapper determines completion.
+// When set, the AppWrapper transitions to Succeeded when the trigger component completes,
+// rather than waiting for all pods to reach the Succeeded phase.
+type CompletionPolicy struct {
+	// TriggerRef identifies the component whose completion determines AppWrapper completion.
+	// The referenced resource must match one of the AppWrapper's components by apiGroup, kind, and name.
+	TriggerRef corev1.TypedLocalObjectReference `json:"triggerRef"`
 }
 
 // AppWrapperComponent describes a single wrapped Kubernetes resource
@@ -42,7 +56,7 @@ type AppWrapperComponent struct {
 	//+optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 
-	// DeclaredPodSets for the Component (optional for known PodCreating GVKs)
+	// DeclaredPodSets for the Component (optional for known GVKs whose PodSets can be automatically inferred)
 	//+optional
 	DeclaredPodSets []AppWrapperPodSet `json:"podSets,omitempty"`
 
@@ -50,19 +64,19 @@ type AppWrapperComponent struct {
 	//+optional
 	PodSetInfos []AppWrapperPodSetInfo `json:"podSetInfos,omitempty"`
 
+	// Template defines the Kubernetes resource for the Component
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:EmbeddedResource
-	// Template defines the Kubernetes resource for the Component
 	Template runtime.RawExtension `json:"template"`
 }
 
-// AppWrapperPodSet describes an homogeneous set of pods
+// AppWrapperPodSet describes a homogeneous set of pods
 type AppWrapperPodSet struct {
 	// Replicas is the number of pods in this PodSet
 	//+optional
 	Replicas *int32 `json:"replicas,omitempty"`
 
-	// Path is the path Component.Template to the PodTemplateSpec for this PodSet
+	// Path is the path within Component.Template to the PodTemplateSpec for this PodSet
 	Path string `json:"path"`
 
 	// Annotations is an unstructured key value map that may be used to store and retrieve
@@ -90,7 +104,7 @@ type AppWrapperPodSetInfo struct {
 	SchedulingGates []corev1.PodSchedulingGate `json:"schedulingGates,omitempty"`
 }
 
-// AppWrapperStatus defines the observed state of the appwrapper
+// AppWrapperStatus defines the observed state of the AppWrapper
 type AppWrapperStatus struct {
 	// Phase of the AppWrapper object
 	//+optional
@@ -149,7 +163,7 @@ type AppWrapperComponentStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
-// AppWrapperPhase is the phase of the appwrapper
+// AppWrapperPhase enumerates the valid Phases of an AppWrapper
 type AppWrapperPhase string
 
 const (
@@ -164,6 +178,7 @@ const (
 	AppWrapperTerminating AppWrapperPhase = "Terminating"
 )
 
+// AppWrapperCondition enumerates the Condition Types that may appear in AppWrapper status
 type AppWrapperCondition string
 
 const (

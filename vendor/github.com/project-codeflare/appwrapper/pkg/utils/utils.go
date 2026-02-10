@@ -22,13 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	//  Import the crypto sha256 algorithm for the docker image parser to work
-	_ "crypto/sha256"
-	//  Import the crypto/sha512 algorithm for the docker image parser to work with 384 and 512 sha hashes
-	_ "crypto/sha512"
-
 	dockerref "github.com/distribution/reference"
-
 	kftraining "github.com/kubeflow/training-operator/pkg/apis/kubeflow.org/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
@@ -39,6 +33,11 @@ import (
 	jobsetapi "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 
 	awv1beta2 "github.com/project-codeflare/appwrapper/api/v1beta2"
+
+	//  Import the crypto sha256 algorithm for the docker image parser to work
+	_ "crypto/sha256"
+	//  Import the crypto/sha512 algorithm for the docker image parser to work with 384 and 512 sha hashes
+	_ "crypto/sha512"
 )
 
 const templateString = "template"
@@ -49,22 +48,48 @@ const (
 	PodSetAnnotationTASSubGroupCount      = "workload.codeflare.dev.appwrapper/tas-sub-group-count"
 )
 
-// GetPodTemplateSpec extracts a Kueue-compatible PodTemplateSpec at the given path within obj
+// IsPodSpecPath returns true if the path within obj resolves to a raw v1.PodSpec
+// rather than a v1.PodTemplateSpec. A PodTemplateSpec has a "spec" sub-field containing
+// the PodSpec; a raw PodSpec has "containers" directly at the top level.
+func IsPodSpecPath(obj *unstructured.Unstructured, path string) bool {
+	p, err := GetRawTemplate(obj.UnstructuredContent(), path)
+	if err != nil {
+		return false
+	}
+	if _, hasSpec := p["spec"].(map[string]interface{}); hasSpec {
+		return false
+	}
+	_, hasContainers := p["containers"].([]interface{})
+	return hasContainers
+}
+
+// GetPodTemplateSpec extracts a Kueue-compatible PodTemplateSpec at the given path within obj.
+// The path may resolve to either a v1.PodTemplateSpec (with metadata + spec) or a raw v1.PodSpec
+// (with containers directly at the top level, as used by CRDs like LLMInferenceService).
 func GetPodTemplateSpec(obj *unstructured.Unstructured, path string) (*v1.PodTemplateSpec, error) {
 	candidatePTS, err := GetRawTemplate(obj.UnstructuredContent(), path)
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert candidatePTS.spec to a natively-typed PodSpec
-	// NOTE: candidatePTS _may_ be a Pod, not a PodSpecTemplate so only parse the Spec.
+	// Convert to a natively-typed PodSpec.
+	// The resolved object is either a PodTemplateSpec (has "spec" sub-field) or a raw PodSpec
+	// (has "containers" directly). Detect which shape we have.
 	src := &v1.PodSpec{}
-	spec, ok := candidatePTS["spec"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("content at %v does not contain a spec", path)
+	spec, hasPTSSpec := candidatePTS["spec"].(map[string]interface{})
+	if !hasPTSSpec {
+		// No "spec" sub-field. Check if this is a raw PodSpec (has "containers" at top level).
+		if _, hasContainers := candidatePTS["containers"].([]interface{}); hasContainers {
+			spec = candidatePTS
+		} else {
+			return nil, fmt.Errorf("content at %v is neither a PodTemplateSpec (no spec field) nor a PodSpec (no containers field)", path)
+		}
 	}
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructuredWithValidation(spec, src, true); err != nil {
-		return nil, fmt.Errorf("content at %v.spec not parseable as a v1.PodSpec: %w", path, err)
+		if hasPTSSpec {
+			return nil, fmt.Errorf("content at %v.spec not parseable as a v1.PodSpec: %w", path, err)
+		}
+		return nil, fmt.Errorf("content at %v not parseable as a v1.PodSpec: %w", path, err)
 	}
 
 	// Now, copy just the subset of src that is relevant to Kueue.
@@ -576,7 +601,7 @@ func InferPodSets(obj *unstructured.Unstructured) ([]awv1beta2.AppWrapperPodSet,
 
 	for _, ps := range podSets {
 		if _, err := GetPodTemplateSpec(obj, ps.Path); err != nil {
-			return nil, fmt.Errorf("%v does not refer to a v1.PodSpecTemplate: %v", ps.Path, err)
+			return nil, fmt.Errorf("%v does not refer to a PodTemplateSpec or PodSpec: %v", ps.Path, err)
 		}
 	}
 

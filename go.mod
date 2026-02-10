@@ -44,6 +44,8 @@ require (
 // TODO: Once https://github.com/kubernetes-sigs/kueue/issues/4470 is resolved, we should upgrade this.
 replace sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.4
 
+replace github.com/project-codeflare/appwrapper => github.com/wseaton/appwrapper v0.0.0-20260210160852-2365e709163f
+
 require (
 	cel.dev/expr v0.19.1 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
@@ -127,7 +129,7 @@ require (
 	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
 	golang.org/x/mod v0.24.0 // indirect
-	golang.org/x/net v0.37.0 // indirect
+	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/oauth2 v0.28.0 // indirect
 	golang.org/x/sync v0.12.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
