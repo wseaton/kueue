@@ -34,6 +34,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	kueuealpha "sigs.k8s.io/kueue/apis/kueue/v1alpha1"
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"sigs.k8s.io/kueue/pkg/controller/jobframework"
 	"sigs.k8s.io/kueue/pkg/features"
@@ -146,6 +147,22 @@ func (aw *AppWrapper) PodSets() ([]kueue.PodSet, error) {
 				ctrl.Log.Error(err, "Malformed annotation ignored",
 					"annotationKey", awutils.PodSetAnnotationTASSubGroupCount,
 					"annotationValue", annotation)
+			}
+		}
+		// Propagate Kueue TAS annotations from AppWrapper podSet annotations into
+		// the PodTemplateSpec ObjectMeta. This is necessary for raw PodSpec paths
+		// (e.g. LLMInferenceService) where there is no PodTemplateSpec metadata
+		// wrapper to carry these annotations natively.
+		for _, tasKey := range []string{
+			kueuealpha.PodSetRequiredTopologyAnnotation,
+			kueuealpha.PodSetPreferredTopologyAnnotation,
+			kueuealpha.PodSetUnconstrainedTopologyAnnotation,
+		} {
+			if val, ok := awPodSets[psIndex].Annotations[tasKey]; ok {
+				if podSpecTemplates[psIndex].Annotations == nil {
+					podSpecTemplates[psIndex].Annotations = make(map[string]string)
+				}
+				podSpecTemplates[psIndex].Annotations[tasKey] = val
 			}
 		}
 		podSets[psIndex] = kueue.PodSet{
